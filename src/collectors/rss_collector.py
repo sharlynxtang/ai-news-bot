@@ -13,6 +13,7 @@ from .base import (
     BaseCollector,
     NewsItem,
     guess_category,
+    in_time_window,
     is_ai_related,
     log,
     sort_and_trim,
@@ -91,6 +92,13 @@ class RSSCollector(BaseCollector):
 
             category = guess_category(title, summary, feed.default_category)
             published = self._iso_utc(_entry_datetime(entry))
+
+            # Strict SGT time-window filter. Dated entries outside the window
+            # are dropped; entries whose date we couldn't parse are kept only
+            # when the feed itself supplied no timestamp at all (rare) so we
+            # never silently lose a feed that stopped emitting dates.
+            if not in_time_window(published, keep_undated=False):
+                continue
 
             items.append(
                 self.make_item(

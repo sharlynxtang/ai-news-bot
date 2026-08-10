@@ -7,7 +7,7 @@ Every collector returns a list of dicts conforming to the unified schema:
         "url": str,
         "source": str,               # techcrunch | hackernews | arxiv | ...
         "summary": str,              # 1-2 sentence summary
-        "category": str,             # product | funding | paper | policy | other
+        "category": str,             # product | paper | policy | competitor_coding | competitor_agent | other
         "published_at": str,         # ISO-8601 UTC, e.g. 2026-08-07T10:00:00Z
     }
 """
@@ -16,7 +16,7 @@ from __future__ import annotations
 import sys
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -157,26 +157,109 @@ def is_ai_related(*texts: str) -> bool:
     return any(kw in blob for kw in config.AI_KEYWORDS)
 
 
+def parse_iso_utc(value: Optional[str]) -> Optional[datetime]:
+    """Parse an ISO-8601 UTC timestamp (with trailing Z) into a datetime.
+
+    Returns None when *value* is empty or unparseable so callers can decide how
+    to treat items lacking a reliable timestamp.
+    """
+    if not value:
+        return None
+    txt = value.strip()
+    if txt.endswith("Z"):
+        txt = txt[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(txt)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def in_time_window(
+    published_at: Optional[str],
+    *,
+    slack_hours: int = 0,
+    keep_undated: bool = False,
+) -> bool:
+    """Return True if *published_at* falls inside the strict SGT window.
+
+    The window is ``config.get_time_window()`` ([start, end] in UTC). A
+    ``slack_hours`` value widens the *start* side only (used by arXiv, whose
+    publication lag can push a relevant paper slightly before the window).
+
+    ``keep_undated`` controls the policy for items with no parseable timestamp:
+    sources that expose no per-item dates (e.g. the atyun scraper) pass
+    ``True`` so they are not silently dropped, while dated feeds pass ``False``.
+    """
+    dt = parse_iso_utc(published_at)
+    if dt is None:
+        return keep_undated
+    start, end = config.get_time_window()
+    if slack_hours:
+        start = start - timedelta(hours=slack_hours)
+    return start <= dt <= end
+
+
+def date_label_cn(published_at: Optional[str]) -> str:
+    """Format an item's date as a Chinese ``（8月9日）`` label (local tz).
+
+    Returns an empty string when the timestamp is missing/unparseable so
+    callers can omit the label rather than print a wrong date.
+    """
+    dt = parse_iso_utc(published_at)
+    if dt is None:
+        return ""
+    local = dt.astimezone(config._local_tz())
+    return f"（{local.month}月{local.day}日）"
+
+
 def guess_category(title: str, summary: str, default: str = "other") -> str:
-    """Very lightweight keyword-based category heuristic."""
+    """Very lightweight keyword-based category heuristic.
+
+    Categories: product / paper / policy / competitor_coding /
+    competitor_agent / other. There is intentionally no `funding` category —
+    funding/acquisition coverage is deferred to the sibling "AI Briefing" bot;
+    a competitor's fundraise still lands in its competitor section, everything
+    else falls through to `product`/`other`.
+
+    `policy` is narrowed to **data & AI compliance / regulation** only: GDPR,
+    data-protection laws, AI governance/act, algorithm filing, AI ethics and
+    AI-training copyright. Generic security breaches / hacks are NOT policy.
+    """
     blob = f"{title} {summary}".lower()
-    funding_kw = [
-        "raise", "raises", "raised", "funding", "series a", "series b",
-        "series c", "seed round", "valuation", "investment", "invests",
-        "acquire", "acquisition", "ipo", "融资", "投资", "估值", "收购",
-    ]
+
+    # Data & AI compliance / regulation (narrowed — no generic cybersecurity).
     policy_kw = [
-        "regulat", "policy", "law", "ban", "lawsuit", "court", "senate",
-        "congress", "eu ai act", "gdpr", "监管", "政策", "法案", "立法",
+        # data compliance
+        "compliance", "gdpr", "data protection", "data privacy",
+        "privacy law", "data transfer", "cross-border data", "data security",
+        "数据合规", "个人信息保护", "数据安全", "数据跨境", "隐私保护",
+        # AI governance / regulation
+        "ai governance", "ai regulat", "ai act", "eu ai act", "ai law",
+        "ai policy", "algorithm filing", "responsible ai", "ai ethics",
+        "ai safety standard", "ai oversight",
+        "ai治理", "算法备案", "ai监管", "ai法案", "ai伦理",
+        "ai安全标准", "人工智能管理办法", "生成式人工智能",
+        # copyright / IP tied to AI
+        "copyright ai", "ai copyright", "training data copyright",
+        "ai训练数据", "知识产权", "版权",
     ]
     paper_kw = ["arxiv", "paper", "we propose", "benchmark", "论文"]
 
-    if any(k in blob for k in funding_kw):
-        return "funding"
+    # Compliance/regulation is checked first so an AI-compliance headline that
+    # also mentions a product name lands in the regulation section.
     if any(k in blob for k in policy_kw):
         return "policy"
     if any(k in blob for k in paper_kw):
         return "paper"
+    # Competitor product tracking, split into two disjoint sub-categories.
+    # Coding tools take precedence over agent platforms when both would match.
+    if any(k in blob for k in config.CODING_COMPETITOR_KEYWORDS):
+        return "competitor_coding"
+    if any(k in blob for k in config.AGENT_COMPETITOR_KEYWORDS):
+        return "competitor_agent"
     return default
 
 

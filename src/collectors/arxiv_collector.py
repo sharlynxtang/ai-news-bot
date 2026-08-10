@@ -1,13 +1,13 @@
 """arXiv collector via the arXiv Atom API."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import List, Optional
 
 import feedparser
 
 from .. import config
-from .base import BaseCollector, NewsItem, log, sort_and_trim
+from .base import BaseCollector, NewsItem, in_time_window, log, sort_and_trim
 
 
 class ArxivCollector(BaseCollector):
@@ -43,10 +43,6 @@ class ArxivCollector(BaseCollector):
             return []
 
         parsed = feedparser.parse(resp.content)
-        # arXiv is generous with the window (24-48h) because paper flow varies.
-        cutoff = datetime.now(timezone.utc) - timedelta(
-            hours=max(config.LOOKBACK_HOURS, 48)
-        )
 
         items: List[NewsItem] = []
         for entry in parsed.entries:
@@ -56,7 +52,15 @@ class ArxivCollector(BaseCollector):
                 continue
 
             published_dt = self._entry_dt(entry)
-            if published_dt and published_dt < cutoff:
+            published = self._iso_utc(published_dt)
+            # Strict SGT window, relaxed on the start side by the configured
+            # slack so arXiv's publication lag doesn't drop otherwise-in-window
+            # papers. Undated entries are dropped (a paper should always date).
+            if not in_time_window(
+                published,
+                slack_hours=config.ARXIV_WINDOW_SLACK_HOURS,
+                keep_undated=False,
+            ):
                 continue
 
             abstract = entry.get("summary", "")
@@ -69,7 +73,7 @@ class ArxivCollector(BaseCollector):
                     source=self.source_name,
                     summary=summary,
                     category="paper",
-                    published_at=self._iso_utc(published_dt),
+                    published_at=published,
                 )
             )
 

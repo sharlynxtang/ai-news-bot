@@ -1,155 +1,143 @@
 # AI News Bot
 
-Multi-source AI news collector. Gathers recent AI-related items from RSS feeds,
-Hacker News, and arXiv, normalizes them into a single schema, filters out
-non-AI noise, and emits a time-sorted JSON list.
+一个面向中文团队的每日 AI 资讯自动化机器人：采集多源新闻、生成结构化早报、推送到飞书。
 
-This repository currently implements the **project scaffold + data collection**
-stage. The `summarizer` and `pusher` modules are stubs to be filled in later.
+## 项目特色（混合架构）
 
-## Project layout
+本项目支持两种运行方式：
 
+- **纯 Python 一体化模式**：`main.py` 一次完成采集→整理→推送。
+- **混合 Agent 模式**：`collect.py` 先产出候选数据，再由任意 Agent（或人工）编辑决策，最后 `send.py` 推送。
+
+- **竞品自动追踪**：内置 43 个 AI Coding 和 AI Agent 竞品关键词，自动抓取并分类竞品动态。
+
+这种混合架构兼顾了**稳定自动化**与**可控编辑能力**：采集和推送保持工程化，内容决策可灵活接入不同平台或工作流。
+
+## 架构图（Mermaid）
+
+```mermaid
+flowchart LR
+    A[RSS / Hacker News / arXiv] --> B[collect.py\n候选采集与去重]
+    B --> C[候选数据 JSON\noutput/candidates.json]
+    C --> D[Agent 或人工编辑\n基于 agent_prompt.md 指令]
+    D --> E[Markdown 早报]
+    E --> F[send.py\n飞书卡片推送]
+
+    A --> G[main.py 一体化模式]
+    G --> H[LLM 摘要生成]
+    H --> F
 ```
-ai-news-bot/
-├── src/
-│   ├── config.py            # centralized config (env-driven, sane defaults)
-│   ├── collectors/
-│   │   ├── base.py          # BaseCollector: retry/timeout HTTP, schema, helpers
-│   │   ├── rss_collector.py # generic multi-feed RSS (incl. 机器之心 中文源)
-│   │   ├── hackernews.py    # HN Algolia search API
-│   │   ├── arxiv_collector.py
-│   │   ├── __init__.py      # registry + collect_all() runner
-│   │   └── __main__.py      # `python -m src.collectors`
-│   ├── summarizer/          # LLM digest (stub)
-│   └── pusher/              # Feishu webhook (stub)
-├── main.py                  # orchestrator with --dry-run
-├── requirements.txt
-├── .env.example
-├── .gitignore
-└── README.md
-```
 
-## Setup
+## 早报板块结构
+
+默认输出包含以下结构：
+
+1. **AI 产品与工具**：新产品发布、重大更新、收购动态
+2. **AI Coding 竞品动态**：Cursor / Windsurf / Claude Code / Copilot / Codex / Qoder 等编码工具动态
+3. **AI Agent 竞品动态**：Manus / Lovable / v0 / Coze / Dify / WorkBuddy 等 Agent 平台动态
+4. **📑 论文速览**：arXiv 精选论文，每篇一句话摘要
+5. **数据与 AI 合规监管**：聚焦数据合规 / AI 治理 / AI 法案 / 版权问题
+6. **今日焦点**：当日整体趋势的编辑点评
+7. **筛选说明**：时效窗口、数据源、采集漏斗、剔除原因全透明
+
+## 快速开始
+
+### 1) 安装依赖
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # optional; collection works without any keys
 ```
 
-## Usage
-
-Run collection and print the JSON news list:
+### 2) 配置环境变量
 
 ```bash
-# Either entry point works. JSON goes to stdout, stats to stderr.
-python -m src.collectors --pretty
-python main.py --dry-run --pretty
+cp .env.example .env
 ```
 
-Pipe just the JSON (stats are on stderr):
+按需填写 `.env`：
+
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `OPENAI_MODEL`
+- `FEISHU_WEBHOOK_URL`
+
+### 3) 运行方式 A：纯 Python 一体化
 
 ```bash
-python -m src.collectors > news.json
+python main.py
 ```
 
-## Output schema
-
-Each item is a dict:
-
-```python
-{
-    "title": "…",
-    "url": "https://…",
-    "source": "techcrunch | theverge | arstechnica | jiqizhixin | hackernews | arxiv",
-    "summary": "1-2 sentence summary",
-    "category": "product | funding | paper | policy | other",
-    "published_at": "2026-08-07T10:00:00Z"   # ISO-8601 UTC
-}
-```
-
-## Data sources
-
-| Source | Type | Notes |
-|--------|------|-------|
-| TechCrunch AI, The Verge AI, Ars Technica, 机器之心 | RSS | configured in `config.RSS_FEEDS` |
-| Hacker News | Algolia API | past `LOOKBACK_HOURS`, `points >= HN_MIN_POINTS` |
-| arXiv | Atom API | `cs.AI/cs.CL/cs.CV/cs.LG`, recent, abstract → summary |
-
-Add or remove RSS feeds by editing `RSS_FEEDS` in `src/config.py`.
-
-## Configuration
-
-All settings live in `src/config.py` and can be overridden via environment
-variables (or a `.env` file). Key knobs:
-
-- `HTTP_TIMEOUT` (default 10s), `HTTP_RETRIES` (default 3)
-- `LOOKBACK_HOURS` (default 24), `HN_MIN_POINTS` (default 50)
-- `MAX_ITEMS_PER_SOURCE` (default 30)
-- `OPENAI_API_KEY`, `FEISHU_WEBHOOK_URL` (for the future summarizer/pusher)
-
-## Design notes
-
-- **Fault isolation**: a failure in one source never aborts the others —
-  handled both inside collectors and in `collect_all()`.
-- **Retry + timeout**: every HTTP GET goes through `BaseCollector._request`
-  with a 10s timeout and 3 retries with backoff.
-- **Relevance filter**: RSS/HN items are keyword-filtered against `AI_KEYWORDS`
-  (English + Chinese); arXiv is already AI-scoped by category.
-- **Sorting/dedup**: results are de-duplicated by URL and sorted by
-  `published_at` descending.
-
-## 部署指南 (Deployment)
-
-本项目通过 **GitHub Actions** 实现每天定时自动运行（北京时间 10:30 推送到飞书）。
-配置文件位于 [`.github/workflows/daily-news.yml`](.github/workflows/daily-news.yml)。
-
-### 1. Fork / Clone 仓库
-
-将本仓库 Fork 到你自己的 GitHub 账号（或 Clone 后推送到你自己的新仓库）：
+常用参数：
 
 ```bash
-git clone <this-repo-url>
-cd ai-news-bot
-# 关联到你自己的远程仓库并推送
-git remote set-url origin https://github.com/<your-name>/ai-news-bot.git
-git push -u origin main
+python main.py --dry-run      # 本地预览 Markdown，不推送
+python main.py --json --pretty
+python main.py --test-webhook
 ```
 
-### 2. 配置 GitHub Secrets
+### 4) 运行方式 B：混合 Agent 模式
 
-进入你的仓库 **Settings → Secrets and variables → Actions → New repository secret**，
-添加以下两个 secret：
+```bash
+python collect.py
+# 产出 output/candidates.json 与 output/collect_stats.json
 
-| Secret 名称 | 说明 |
-|-------------|------|
-| `OPENAI_API_KEY` | OpenAI API key（用于 AI 整理摘要） |
-| `FEISHU_WEBHOOK_URL` | 飞书自定义机器人的 Webhook URL |
+# 中间步骤：由 Agent 或人工根据 agent_prompt.md 进行筛选与改写，生成 Markdown 早报
 
-> 注意：只需配置 secret，**不要**把真实密钥写进 `.env` 或提交到仓库。
+python send.py /absolute/path/to/digest.md
+```
 
-### 3. 创建飞书自定义机器人
+> `agent_prompt.md` 是**平台无关**的编辑指令文档，可用于任意支持文本处理的 Agent/工作流。
 
-1. 在飞书中创建一个**只有自己的群**（方便接收测试消息）。
-2. 打开该群 → **群设置 → 群机器人 → 添加机器人 → 自定义机器人**。
-3. 填写机器人名称（如 `AI News Bot`），完成后**复制 Webhook URL**。
-4. 把这个 URL 填入上一步的 `FEISHU_WEBHOOK_URL` secret。
+## 数据源列表
 
-### 4. 手动触发测试
+当前内置来源包括：
 
-进入仓库 **Actions → Daily AI News Report → Run workflow**，
-选择 `main` 分支后点击 **Run workflow** 立即执行一次。
+- **RSS 媒体源**：TechCrunch AI、The Verge AI、Ars Technica、GitHub Blog AI、Vercel Blog、量子位(qbitai)、雷锋网(leiphone)、InfoQ AI
+- **Hacker News**：基于 Algolia API，含 43 个竞品关键词（Cursor、Claude Code、Copilot、Dify、Coze 等）自动搜索
+- **arXiv**：`cs.AI / cs.CL / cs.CV / cs.LG` 方向论文
+- **网页抓取**：AI科技评论(atyun.com)，基于 BeautifulSoup 的结构化抓取
 
-### 5. 验证
+可在 `src/config.py` 中扩展或调整来源与竞品关键词。
 
-- 在 **Actions** 页面查看本次运行的日志，确认各步骤成功、`Run AI News Bot` 无致命报错。
-- 检查你的飞书群是否收到了当日的 AI 新闻摘要卡片。
-- 若未收到，先看 Actions 日志中 `main.py` 的 stderr 输出定位问题
-  （常见：secret 未配置、Webhook URL 失效、OpenAI 额度/密钥问题）。
+## 配置说明
 
-### 定时说明
+核心配置项（环境变量）：
 
-workflow 的 cron 为 `30 2 * * *`（UTC 2:30），对应**北京时间 10:30**。
-如需改时间，编辑 `daily-news.yml` 中的 `cron` 表达式（GitHub Actions 使用 UTC）。
-单次运行设有 `timeout-minutes: 10` 上限，且脚本非零退出不会让 workflow 整体标红，
-错误详情始终保留在日志中便于排查。
+- `OPENAI_API_KEY`：LLM 调用密钥
+- `OPENAI_BASE_URL`：OpenAI 兼容接口地址
+- `OPENAI_MODEL`：摘要模型名
+- `FEISHU_WEBHOOK_URL`：飞书机器人 Webhook
+- `HTTP_TIMEOUT` / `HTTP_RETRIES`：采集请求超时与重试
+- `LOOKBACK_HOURS` / `HN_MIN_POINTS` / `MAX_ITEMS_PER_SOURCE`：采集窗口与阈值
+
+## 项目结构
+
+```text
+ai-news-bot/
+├── src/
+│   ├── collectors/          # 多源采集器
+│   ├── summarizer/          # 摘要与结构化输出
+│   ├── pusher/              # 飞书推送
+│   └── config.py            # 配置中心
+├── collect.py               # 采集阶段（混合模式）
+├── send.py                  # 推送阶段（混合模式）
+├── main.py                  # 一体化入口
+├── agent_prompt.md          # 平台无关的编辑指令
+├── .env.example             # 环境变量模板
+├── requirements.txt
+├── LICENSE
+└── README.md
+```
+
+## 飞书推送效果说明
+
+推送消息为飞书交互式卡片：
+
+- 顶部显示日期与标题
+- 各板块按分区展示，支持 Markdown 链接
+- 「今日焦点」与「筛选说明」位于卡片尾部，便于快速浏览与追溯来源
+
+## License
+
+本项目采用 **MIT License**，详见 `LICENSE`。

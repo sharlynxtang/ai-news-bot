@@ -6,7 +6,14 @@ from datetime import datetime, timedelta, timezone
 from typing import List
 
 from .. import config
-from .base import BaseCollector, NewsItem, guess_category, log, sort_and_trim
+from .base import (
+    BaseCollector,
+    NewsItem,
+    guess_category,
+    in_time_window,
+    log,
+    sort_and_trim,
+)
 
 
 class HackerNewsCollector(BaseCollector):
@@ -22,10 +29,11 @@ class HackerNewsCollector(BaseCollector):
     _api_url = config.HN_API_URL.replace("/search", "/search_by_date")
 
     def collect(self) -> List[NewsItem]:
-        cutoff = datetime.now(timezone.utc) - timedelta(
-            hours=config.LOOKBACK_HOURS
-        )
-        cutoff_ts = int(cutoff.timestamp())
+        # Bound the API query to the strict SGT window's start so we don't pull
+        # stories older than the window. The window's upper bound is enforced
+        # client-side via in_time_window() below.
+        window_start, _window_end = config.get_time_window()
+        cutoff_ts = int(window_start.timestamp())
 
         seen_ids: set[str] = set()
         items: List[NewsItem] = []
@@ -73,6 +81,12 @@ class HackerNewsCollector(BaseCollector):
                     )
                 else:
                     published = self._iso_utc(None)
+
+                # Enforce the window's upper bound (start is bounded by the API
+                # numericFilters above). Undated hits fall back to "now" which
+                # is inside the window by construction.
+                if not in_time_window(published, keep_undated=True):
+                    continue
 
                 items.append(
                     self.make_item(

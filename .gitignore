@@ -17,6 +17,7 @@ env/
 # Output / logs
 *.log
 output/
+daily/
 *.json.bak
 
 # OS / editor

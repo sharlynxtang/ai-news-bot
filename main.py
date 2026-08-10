@@ -2,6 +2,11 @@
 
 Pipeline: collect -> summarize -> (push).
 
+The collect and send stages are also available as standalone scripts
+(``collect.py`` / ``send.py``) for the hybrid Python-collect + Agent-decide
+architecture; this orchestrator reuses those same modules so behaviour stays
+identical whether run end-to-end or stage-by-stage.
+
 Usage:
     python main.py --dry-run          # collect + summarize (no API call, no push), print Markdown
     python main.py --dry-run --quiet  # same, suppress per-collector progress logs
@@ -25,9 +30,21 @@ from src.summarizer import LLMSummarizer
 def _print_stats(stats, total, elapsed) -> None:
     print("\n=== Collection summary ===", file=sys.stderr)
     for source, count in stats.items():
+        # Skip reserved funnel-metadata keys (prefixed with "_").
+        if source.startswith("_"):
+            continue
         print(f"  {source:12s}: {count}", file=sys.stderr)
     print(f"  {'total (dedup)':12s}: {total}", file=sys.stderr)
     print(f"  elapsed     : {elapsed:.1f}s", file=sys.stderr)
+
+
+def _build_summary_stats(stats) -> dict:
+    """Extract the 筛选说明 funnel metadata from the collect_all stats dict."""
+    return {
+        "sources": stats.get("_sources", []),
+        "total_collected": stats.get("_total_collected"),
+        "deduped": stats.get("_deduped"),
+    }
 
 
 def main() -> int:
@@ -94,7 +111,7 @@ def main() -> int:
     # no flags   → dry_run=False (real LLM call; auto-falls back on API error)
     summarizer = LLMSummarizer(dry_run=args.dry_run)
     print("[summarizer] processing…", file=sys.stderr)
-    digest = summarizer.summarize(items)
+    digest = summarizer.summarize(items, _build_summary_stats(stats))
     print(digest)
 
     # ── Push ─────────────────────────────────────────────────────────────────
