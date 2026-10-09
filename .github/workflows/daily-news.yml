@@ -1,9 +1,7 @@
 name: Daily AI News Report
 
 on:
-  schedule:
-    - cron: '30 2 * * *'  # UTC 2:30 = CST (北京时间) 10:30
-  workflow_dispatch:        # 手动触发
+  workflow_dispatch:  # Triggered daily at 11:00 Asia/Singapore by an external scheduler.
 
 jobs:
   send-report:
@@ -21,9 +19,12 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run AI News Bot
-        # `|| true` 保证即使脚本非零退出也不让整个 workflow crash；
-        # 详细错误已由 main.py 打到 stderr，可在 Actions 日志中查看。
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-        run: python main.py || echo "::warning::main.py exited non-zero — check logs above"
+        run: |
+          if [ -z "$FEISHU_WEBHOOK_URL" ]; then
+            echo "::error::FEISHU_WEBHOOK_URL is missing from GitHub Actions secrets"
+            exit 1
+          fi
+          python main.py
