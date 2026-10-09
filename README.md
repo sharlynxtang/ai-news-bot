@@ -10,6 +10,7 @@
 - **混合 Agent 模式**：`collect.py` 先产出候选数据，再由任意 Agent（或人工）编辑决策，最后 `send.py` 推送。
 
 - **竞品自动追踪**：内置 43 个 AI Coding 和 AI Agent 竞品关键词，自动抓取并分类竞品动态。
+- **图文早报与 X 观点**：尽可能使用原文 RSS 配图；配置飞书应用后嵌入卡片。配置 X API 后，从精选 AI 研究者和官方账号采集公开原帖。
 
 这种混合架构兼顾了**稳定自动化**与**可控编辑能力**：采集和推送保持工程化，内容决策可灵活接入不同平台或工作流。
 
@@ -61,6 +62,8 @@ cp .env.example .env
 - `OPENAI_BASE_URL`
 - `OPENAI_MODEL`
 - `FEISHU_WEBHOOK_URL`
+- `FEISHU_APP_ID` / `FEISHU_APP_SECRET`（可选，卡片内嵌图片所需）
+- `X_BEARER_TOKEN`（可选，X 帖子采集所需）
 
 ### 3) 运行方式 A：纯 Python 一体化
 
@@ -97,6 +100,7 @@ python send.py /absolute/path/to/digest.md
 - **Hacker News**：基于 Algolia API，含 43 个竞品关键词（Cursor、Claude Code、Copilot、Dify、Coze 等）自动搜索
 - **arXiv**：`cs.AI / cs.CL / cs.CV / cs.LG` 方向论文
 - **网页抓取**：AI科技评论(atyun.com)，基于 BeautifulSoup 的结构化抓取
+- **X 精选观点**：配置 X API 后，从精选 AI 研究者与官方团队账号获取公开原帖，附作者和原帖链接
 
 可在 `src/config.py` 中扩展或调整来源与竞品关键词。
 
@@ -107,6 +111,7 @@ python send.py /absolute/path/to/digest.md
 - `OPENAI_API_KEY`：LLM 调用密钥
 - `OPENAI_BASE_URL`：OpenAI 兼容接口地址
 - `OPENAI_MODEL`：摘要模型名
+- `X_ACCOUNTS` / `X_MAX_POSTS`：X 账号名单和最多保留帖子数；使用 X 官方 recent-search API，账号名单可覆盖默认值
 - `FEISHU_WEBHOOK_URL`：飞书机器人 Webhook
 - `HTTP_TIMEOUT` / `HTTP_RETRIES`：采集请求超时与重试
 - `LOOKBACK_HOURS` / `HN_MIN_POINTS` / `MAX_ITEMS_PER_SOURCE`：采集窗口与阈值
@@ -137,6 +142,8 @@ ai-news-bot/
 - 顶部显示日期与标题
 - 各板块按分区展示，支持 Markdown 链接
 - 「今日焦点」与「筛选说明」位于卡片尾部，便于快速浏览与追溯来源
+- 原文有配图时附带图片链接；配置飞书应用凭据和上传图片权限后，最多三张图会直接嵌入卡片。图片上传失败时仍保留链接。
+- X 观点单列展示，带作者账号和原帖链接；没有 X API 凭据时该来源自动跳过。
 
 ## License
 

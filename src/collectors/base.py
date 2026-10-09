@@ -9,6 +9,7 @@ Every collector returns a list of dicts conforming to the unified schema:
         "summary": str,              # 1-2 sentence summary
         "category": str,             # product | paper | policy | competitor_coding | competitor_agent | other
         "published_at": str,         # ISO-8601 UTC, e.g. 2026-08-07T10:00:00Z
+        "image_url": str,            # optional original/source image URL
     }
 """
 from __future__ import annotations
@@ -134,6 +135,7 @@ class BaseCollector(ABC):
         summary: str = "",
         category: str = "other",
         published_at: Optional[str] = None,
+        image_url: str = "",
     ) -> NewsItem:
         """Build a schema-conforming item dict."""
         if category not in config.VALID_CATEGORIES:
@@ -146,6 +148,7 @@ class BaseCollector(ABC):
             "category": category,
             "published_at": published_at
             or BaseCollector._iso_utc(None),
+            "image_url": image_url,
         }
 
 

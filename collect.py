@@ -55,6 +55,7 @@ def build_candidates(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "summary": it.get("summary", ""),
                 "category": it.get("category", "other"),
                 "published_at": it.get("published_at", ""),
+                "image_url": it.get("image_url", ""),
                 "date_label": date_label_cn(it.get("published_at")),
             }
         )

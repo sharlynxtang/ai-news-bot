@@ -50,6 +50,7 @@ CATEGORY_LABELS: Dict[str, str] = {
     "competitor_agent":   "AI Agent 竞品动态",
     "paper":              "📑 论文速览",
     "policy":             "数据与 AI 合规监管",
+    "x_post":           "X 精选观点",
 }
 
 # The "other" bucket is rendered after the four main sections only when
@@ -76,6 +77,7 @@ SOURCE_CN: Dict[str, str] = {
     "langchain_blog": "LangChain Blog",
     "cursor_blog":    "Cursor Blog",
     "codeium_blog":   "Codeium Blog",
+    "x":              "X",
 }
 
 WEEKDAY_CN = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
@@ -198,7 +200,7 @@ def _build_batch_prompt(items: List[NewsItem], target: int) -> List[Dict[str, st
                 "1. 优先选择有实质性进展的新闻（重大产品发布/更新、竞品动态、突破性论文、数据/AI合规监管）\n"
                 "2. 去重：同一事件的多条报道只保留最重要的一条\n"
                 "3. 校正 category，可选值："
-                "product / competitor_coding / competitor_agent / paper / policy / other\n"
+                "product / competitor_coding / competitor_agent / paper / policy / x_post / other\n"
                 "   - product（AI 产品与工具）：新 AI 产品/工具发布、现有产品重大更新（ChatGPT/Claude 新功能）、开发者工具与 SDK 更新\n"
                 "   - competitor_coding（AI Coding 竞品）：Cursor、Windsurf/Codeium、GitHub Copilot、Claude Code、Codex CLI、Augment Code、Cline、Devin、Amazon Q、JetBrains AI、Tabnine、Replit Agent、Qoder 等编程工具动态\n"
                 "   - competitor_agent（AI Agent 竞品）：Manus、Lovable、v0/Vercel、Bolt.new、Coze、Dify、LangChain、CrewAI、AutoGPT、n8n、千问办公 等 Agent/应用构建平台，以及 AI+垂直行业（Harvey AI 法律、HireVue HR、Kensho 金融）\n"
@@ -247,15 +249,16 @@ def _build_final_prompt(items: List[NewsItem]) -> List[Dict[str, str]]:
                 f"1. 筛选：选出最重要的 {FINAL_MIN}–{FINAL_MAX} 条\n"
                 "2. 去重：同一事件的不同来源报道合并为一条（保留最有价值的 URL）\n"
                 "3. 分类校正：确认/修正 category，可选值："
-                "product / competitor_coding / competitor_agent / paper / policy / other\n"
+                "product / competitor_coding / competitor_agent / paper / policy / x_post / other\n"
                 "   - product（AI 产品与工具）：新 AI 产品/工具发布、现有产品重大更新、开发者工具与 SDK 更新；每条尽量包含 产品名 + 具体更新内容 + 影响\n"
                 "   - competitor_coding（AI Coding 竞品动态）：Cursor、Windsurf/Codeium、GitHub Copilot、Claude Code、Codex CLI、Augment Code、Cline、Devin、Amazon Q、JetBrains AI、Tabnine、Replit Agent、Qoder 等编程工具的版本发布/新功能/定价/性能对比\n"
                 "   - competitor_agent（AI Agent 竞品动态）：Manus、Lovable、v0/Vercel、Bolt.new、Coze、Dify、LangChain、CrewAI、AutoGPT、n8n、千问办公 等 Agent/应用构建平台，以及 AI+垂直行业应用（Harvey AI 法律、HireVue HR、Kensho 金融）\n"
                 "   - paper（论文速览）：新论文，每条仅需 1 句摘要说明主题，无需深度解读\n"
                 "   - policy（数据与 AI 合规监管）：仅限数据合规、AI 治理/监管、AI 训练数据版权；**排除**一般网络安全漏洞/黑客攻击\n"
+                "   - x_post（X 精选观点）：权威 AI 研究者或团队的原帖，保留作者、原文链接与核心观点\n"
                 "   - 无融资/收购分类：纯资本市场新闻若与竞品无关请归入 product 或不选\n"
                 "4. 中文摘要：每条 1-2 句精炼中文摘要（论文仅 1 句；英文原文需翻译）\n"
-                "5. 日期标注：每条保留输入中的 date_label（形如「（8月9日）」）原样输出，不要修改或删除\n"
+                "5. 日期标注：每条保留输入中的 date_label（形如「（8月9日）」）原样输出，不要修改或删除；URL 必须原样保留\n"
                 "6. 今日焦点：2-3 句综合分析，指出当日最值得关注的趋势或事件\n\n"
                 f"新闻列表：\n{items_json}\n\n"
                 "请以纯 JSON 格式返回（不要包含 ```代码块``` 标记）：\n"
@@ -340,6 +343,8 @@ class LLMSummarizer:
         self, items: List[NewsItem], stats: Optional[Dict[str, Any]] = None
     ) -> str:
         items = _preprocess(items)
+        x_posts = [it for it in items if it.get("category") == "x_post"][: max(config.X_MAX_POSTS, 0)]
+        by_url = {it.get("url"): it for it in items if it.get("url")}
 
         if len(items) > BATCH_SIZE:
             _log(f"[summarizer] {len(items)} items > {BATCH_SIZE}, running multi-batch select")
@@ -362,6 +367,22 @@ class LLMSummarizer:
             f"→ selecting {FINAL_MIN}–{FINAL_MAX}"
         )
         result = self._call_final(candidates)
+        # The model returns display text, while image URLs come only from the
+        # trusted collector output. Keep a small X section even if the model's
+        # general news selection omits all curated posts.
+        selected = result.get("items") or []
+        for it in selected:
+            it.pop("image_url", None)
+            original = by_url.get(it.get("url"))
+            if original:
+                it["image_url"] = original.get("image_url", "")
+                if original.get("category") == "x_post":
+                    it["category"] = "x_post"
+        existing_urls = {it.get("url") for it in selected}
+        for original in x_posts:
+            if original.get("url") not in existing_urls:
+                selected.append({**original, "summary_cn": original.get("summary", "")})
+        result["items"] = selected
         return self._render_markdown(result, stats)
 
     def _multi_batch_select(self, items: List[NewsItem]) -> List[NewsItem]:
@@ -457,6 +478,7 @@ class LLMSummarizer:
                         # Carry the timestamp so _format_entry can date the bullet.
                         "published_at": it.get("published_at", ""),
                         "date_label": date_label_cn(it.get("published_at")),
+                        "image_url": it.get("image_url", ""),
                     }
                 )
 
@@ -493,12 +515,15 @@ class LLMSummarizer:
         entry = f"• {title}：{summary}{label}"
         if url:
             entry += f" [来源]({url})"
+        image_url = (it.get("image_url") or "").strip()
+        if image_url.startswith("https://"):
+            entry += f"\n🖼 [原文配图]({image_url})"
         return entry
 
     def _render_markdown(
         self, result: Dict[str, Any], stats: Optional[Dict[str, Any]] = None
     ) -> str:
-        now_local = datetime.now(timezone.utc).astimezone()
+        now_local = datetime.now(timezone.utc).astimezone(config._local_tz())
         date_str = now_local.strftime("%Y-%m-%d")
         weekday_str = WEEKDAY_CN[now_local.weekday()]
 
@@ -514,10 +539,13 @@ class LLMSummarizer:
                 cat = "other"
             by_cat[cat].append(it)
 
-        # Always render all four required sections (acceptance criteria)
+        # Always render the core sections. Omit the optional X section when
+        # no authorized X posts were collected in the reporting window.
         for cat, label in CATEGORY_LABELS.items():
-            lines.append(f"━━ {label} ━━")
             cat_items = by_cat[cat]
+            if cat == "x_post" and not cat_items:
+                continue
+            lines.append(f"━━ {label} ━━")
             if cat_items:
                 for it in cat_items:
                     lines.append(self._format_entry(it))
@@ -601,7 +629,7 @@ class LLMSummarizer:
         return lines
 
     def _empty_report(self) -> str:
-        now_local = datetime.now(timezone.utc).astimezone()
+        now_local = datetime.now(timezone.utc).astimezone(config._local_tz())
         date_str = now_local.strftime("%Y-%m-%d")
         weekday_str = WEEKDAY_CN[now_local.weekday()]
         return (

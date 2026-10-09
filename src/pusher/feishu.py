@@ -37,12 +37,15 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from .. import config
+from .images import FeishuImageUploader
 
 # Feishu card header colour template (blue per spec).
 HEADER_TEMPLATE = "blue"
 
 # Matches a section header line like "━━ AI 产品与应用 ━━".
 _SECTION_RE = re.compile(r"^━━\s*(.+?)\s*━━$")
+_IMAGE_RE = re.compile(r"^🖼 \[原文配图\]\((https://[^)]+)\)$", re.MULTILINE)
+MAX_INLINE_IMAGES = 3
 
 
 def _log(msg: str) -> None:
@@ -106,7 +109,7 @@ def _section_to_markdown(section: Dict[str, str]) -> str:
     return body
 
 
-def build_card(markdown: str) -> Dict[str, Any]:
+def build_card(markdown: str, *, image_keys: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """Convert a digest Markdown string into a Feishu interactive-card payload.
 
     Each section becomes a ``markdown`` element; sections are separated by
@@ -116,13 +119,31 @@ def build_card(markdown: str) -> Dict[str, Any]:
     title, sections = _split_sections(markdown)
 
     elements: List[Dict[str, Any]] = []
+    image_keys = image_keys or {}
     for section in sections:
         content = _section_to_markdown(section)
         if not content.strip():
             continue
         if elements:
             elements.append({"tag": "hr"})
-        elements.append({"tag": "markdown", "content": content})
+        lines: List[str] = []
+        for line in content.splitlines():
+            match = _IMAGE_RE.fullmatch(line.strip())
+            key = image_keys.get(match.group(1)) if match else None
+            if key:
+                if lines:
+                    elements.append({"tag": "markdown", "content": "\n".join(lines)})
+                    lines = []
+                elements.append({
+                    "tag": "img", "img_key": key,
+                    "alt": {"tag": "plain_text", "content": "原文配图"},
+                    "mode": "fit_horizontal",
+                })
+                elements.append({"tag": "markdown", "content": line})
+            else:
+                lines.append(line)
+        if lines:
+            elements.append({"tag": "markdown", "content": "\n".join(lines)})
 
     # Guarantee at least one element so the card is always valid.
     if not elements:
@@ -226,7 +247,16 @@ class FeishuPusher:
         In dry-run mode the payload is printed as pretty JSON and True is
         returned without any network call.
         """
-        payload = build_card(markdown)
+        image_keys = {}
+        if not self.dry_run and config.FEISHU_APP_ID and config.FEISHU_APP_SECRET:
+            urls = list(dict.fromkeys(_IMAGE_RE.findall(markdown)))[:MAX_INLINE_IMAGES]
+            try:
+                image_keys = FeishuImageUploader().upload_many(urls)
+                if urls:
+                    _log(f"[pusher] embedded {len(image_keys)}/{len(urls)} source images")
+            except (requests.RequestException, ValueError):
+                _log("[pusher] image upload unavailable; keeping source-image links")
+        payload = build_card(markdown, image_keys=image_keys)
 
         if self.dry_run:
             print(json.dumps(payload, ensure_ascii=False, indent=2))

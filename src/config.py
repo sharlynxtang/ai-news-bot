@@ -120,6 +120,23 @@ OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 FEISHU_WEBHOOK_URL: str = os.getenv("FEISHU_WEBHOOK_URL", "")
+FEISHU_APP_ID: str = os.getenv("FEISHU_APP_ID", "")
+FEISHU_APP_SECRET: str = os.getenv("FEISHU_APP_SECRET", "")
+
+# X's official API is optional. Without a bearer token the existing news
+# sources continue to work; with one, recent posts from this curated list are
+# considered for the daily digest. Override the list with X_ACCOUNTS.
+X_BEARER_TOKEN: str = os.getenv("X_BEARER_TOKEN", "")
+X_API_URL: str = "https://api.x.com/2/tweets/search/recent"
+X_ACCOUNTS: List[str] = [
+    account.strip().lstrip("@")
+    for account in os.getenv(
+        "X_ACCOUNTS",
+        "karpathy,AndrewYNg,ylecun,demishassabis,fchollet,JimFan,OpenAI,AnthropicAI,GoogleDeepMind",
+    ).split(",")
+    if account.strip()
+]
+X_MAX_POSTS: int = _get_int("X_MAX_POSTS", 4)
 
 
 @dataclass(frozen=True)
@@ -312,5 +329,5 @@ AI_KEYWORDS = AI_KEYWORDS + COMPETITOR_KEYWORDS
 
 VALID_CATEGORIES = {
     "product", "paper", "policy",
-    "competitor_coding", "competitor_agent", "other",
+    "competitor_coding", "competitor_agent", "x_post", "other",
 }

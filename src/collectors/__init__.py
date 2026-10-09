@@ -13,6 +13,7 @@ from .atyun_collector import AtyunCollector
 from .base import BaseCollector, NewsItem, log, sort_and_trim
 from .hackernews import HackerNewsCollector
 from .rss_collector import RSSCollector
+from .x_collector import XCollector
 
 # Registry of collector factories. RSS covers all configured feeds (incl. the
 # Chinese sources 量子位, 雷锋网, InfoQ AI and others in config.RSS_FEEDS).
@@ -21,6 +22,7 @@ COLLECTORS: Dict[str, Callable[[], BaseCollector]] = {
     "hackernews": HackerNewsCollector,
     "arxiv": ArxivCollector,
     "atyun": AtyunCollector,
+    "x": XCollector,
 }
 
 
@@ -88,6 +90,7 @@ __all__ = [
     "AtyunCollector",
     "HackerNewsCollector",
     "RSSCollector",
+    "XCollector",
     "COLLECTORS",
     "collect_all",
 ]

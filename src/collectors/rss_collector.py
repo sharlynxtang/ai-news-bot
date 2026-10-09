@@ -5,8 +5,10 @@ import html
 import re
 from datetime import datetime, timezone
 from typing import List, Optional
+from urllib.parse import urljoin, urlparse
 
 import feedparser
+from bs4 import BeautifulSoup
 
 from .. import config
 from .base import (
@@ -37,6 +39,29 @@ def _entry_datetime(entry) -> Optional[datetime]:
             except Exception:  # noqa: BLE001
                 continue
     return None
+
+
+def _entry_image_url(entry, feed_url: str) -> str:
+    """Prefer explicit feed media, then the first image in the entry body."""
+    candidates = []
+    for key in ("media_content", "media_thumbnail", "enclosures"):
+        for media in entry.get(key, []):
+            if (media.get("type") or "image/unknown").startswith("image/"):
+                candidates.append(media.get("url", ""))
+    for key in ("summary", "content"):
+        value = entry.get(key, "")
+        if isinstance(value, list):
+            value = " ".join(part.get("value", "") for part in value)
+        if value:
+            img = BeautifulSoup(value, "html.parser").find("img", src=True)
+            if img:
+                candidates.append(img["src"])
+    for candidate in candidates:
+        url = urljoin(feed_url, candidate)
+        parsed = urlparse(url)
+        if parsed.scheme == "https" and parsed.hostname and not parsed.username:
+            return url
+    return ""
 
 
 class RSSCollector(BaseCollector):
@@ -108,6 +133,7 @@ class RSSCollector(BaseCollector):
                     summary=summary,
                     category=category,
                     published_at=published,
+                    image_url=_entry_image_url(entry, feed.url),
                 )
             )
 
