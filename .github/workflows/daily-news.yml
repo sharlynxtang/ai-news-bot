@@ -29,4 +29,8 @@ jobs:
             echo "::error::FEISHU_WEBHOOK_URL is missing from GitHub Actions secrets"
             exit 1
           fi
-          python main.py
+          if python main.py > /tmp/ai-news-report.txt 2> /tmp/ai-news-error.txt; then
+            echo "::notice::Full AI news report delivered"
+          else
+            python scripts/catch_up_fallback.py /tmp/ai-news-report.txt /tmp/ai-news-error.txt
+          fi
