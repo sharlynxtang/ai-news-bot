@@ -4,7 +4,7 @@ GitHub Actions 的内置 `schedule` 可能明显延迟，因此本仓库使用�
 
 ## GitHub 准备
 
-1. 在仓库 **Settings → Secrets and variables → Actions** 中配置 `FEISHU_WEBHOOK_URL`。`OPENAI_API_KEY` 用于 LLM 摘要；没有它时，程序会使用模板摘要。
+1. 在仓库 **Settings → Secrets and variables → Actions** 中配置 `FEISHU_WEBHOOK_URL`。推荐保存完整的 `https://open.feishu.cn/open-apis/bot/v2/hook/...` 地址；若保存的是飞书机器人 UUID 令牌，工作流会自动补全地址。`OPENAI_API_KEY` 用于 LLM 摘要；没有它时，程序会使用模板摘要。
 2. 创建仅限 `sharlynxtang/ai-news-bot` 仓库、授予 **Actions: Read and write** 权限的 GitHub fine-grained personal access token。将令牌只保存在定时服务的私密配置中，不要写进仓库或聊天。
 3. 合并包含本说明和 `.github/workflows/daily-news.yml` 的变更。工作流只保留 `workflow_dispatch`，以免内置定时与外部定时重复推送。
 
