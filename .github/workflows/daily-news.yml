@@ -30,4 +30,16 @@ jobs:
             echo "::error::FEISHU_WEBHOOK_URL is missing from GitHub Actions secrets"
             exit 1
           fi
+          case "$FEISHU_WEBHOOK_URL" in
+            open.feishu.cn/open-apis/bot/v2/hook/*|open.larksuite.com/open-apis/bot/v2/hook/*)
+              FEISHU_WEBHOOK_URL="https://$FEISHU_WEBHOOK_URL"
+              ;;
+            http://open.feishu.cn/open-apis/bot/v2/hook/*|http://open.larksuite.com/open-apis/bot/v2/hook/*)
+              FEISHU_WEBHOOK_URL="https://${FEISHU_WEBHOOK_URL#http://}"
+              ;;
+          esac
+          if [[ "$FEISHU_WEBHOOK_URL" =~ ^[0-9a-fA-F-]{32,}$ ]]; then
+            FEISHU_WEBHOOK_URL="https://open.feishu.cn/open-apis/bot/v2/hook/$FEISHU_WEBHOOK_URL"
+          fi
+          export FEISHU_WEBHOOK_URL
           python main.py
