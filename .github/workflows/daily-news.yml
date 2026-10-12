@@ -29,6 +29,21 @@ jobs:
             echo "::error::FEISHU_WEBHOOK_URL is missing from GitHub Actions secrets"
             exit 1
           fi
+          case "$FEISHU_WEBHOOK_URL" in
+            open.feishu.cn/open-apis/bot/v2/hook/*|open.larksuite.com/open-apis/bot/v2/hook/*)
+              FEISHU_WEBHOOK_URL="https://$FEISHU_WEBHOOK_URL"
+              echo "::notice::Added the missing https:// prefix to the Feishu webhook"
+              ;;
+            http://open.feishu.cn/open-apis/bot/v2/hook/*|http://open.larksuite.com/open-apis/bot/v2/hook/*)
+              FEISHU_WEBHOOK_URL="https://${FEISHU_WEBHOOK_URL#http://}"
+              echo "::notice::Changed the Feishu webhook to HTTPS"
+              ;;
+          esac
+          if [[ "$FEISHU_WEBHOOK_URL" =~ ^[0-9a-fA-F-]{32,}$ ]]; then
+            FEISHU_WEBHOOK_URL="https://open.feishu.cn/open-apis/bot/v2/hook/$FEISHU_WEBHOOK_URL"
+            echo "::notice::Built a Feishu webhook URL from the saved bot token"
+          fi
+          export FEISHU_WEBHOOK_URL
           python scripts/check_feishu_webhook.py
           if python main.py > /tmp/ai-news-report.txt 2> /tmp/ai-news-error.txt; then
             echo "::notice::Full AI news report delivered"
