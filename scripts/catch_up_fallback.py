@@ -46,8 +46,8 @@ def main() -> int:
         response = requests.post(
             os.environ["FEISHU_WEBHOOK_URL"], json=payload, timeout=15
         )
-    except requests.RequestException:
-        print("::error::Plain-text fallback network request failed")
+    except requests.RequestException as exc:
+        print(f"::error::Plain-text fallback request failed ({type(exc).__name__})")
         return 1
 
     if response.status_code != 200:
