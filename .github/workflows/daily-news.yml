@@ -2,7 +2,7 @@ name: Daily AI News Report
 
 on:
   push:
-    branches: [codex/catch-up-2026-10-12]
+    branches: [codex/catch-up-2026-10-13]
   workflow_dispatch:  # Triggered daily at 11:00 Asia/Singapore by an external scheduler.
 
 jobs:
